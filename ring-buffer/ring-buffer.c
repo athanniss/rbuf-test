@@ -1,4 +1,5 @@
 #include "ring-buffer.h"
+#include <string.h> // For memcpy
 
 ////////////////////////////////////////////////////////////////////////////////
 // Function Prototypes
@@ -65,15 +66,15 @@ error_t RB_Put(RB_Handle_t* const _handle, const size_t _nelements, const uint8_
 {
     error_t retVal = eERROR_NO_ERROR;
 
-    // Input parameter validity check
-    if((_handle == NULL) || (_nelements == 0u) || (_buf == NULL))
-    {
-        return eERROR_INVALID_PARAMETERS;
-    }
-
     if(RB_IsInstanceValid(_handle) == false)
     {
         return eERROR_INSTANCE_INVALID;
+    }
+
+    // Input parameter validity check (_handle is checked separately)
+    if((_nelements == 0u) || (_buf == NULL))
+    {
+        return eERROR_INVALID_PARAMETERS;
     }
 
     // Then check if the buffer is full and if overwrite is allowed
@@ -87,7 +88,7 @@ error_t RB_Put(RB_Handle_t* const _handle, const size_t _nelements, const uint8_
     // We need to check for possible overflow of array size. Two options here:
     // 1. The tail index + number of elements to add is less than the buffer size, then we can just copy the data
     // 2. The tail index + number of elements to add is greater than the buffer size, then we need to wrap around and copy the data in two parts
-    if(_handle->tailIndex + _nelements <= _handle->bufferSize)
+    if(_handle->tailIndex + _nelements < _handle->bufferSize)
     {
         // Copy data directly
         memcpy(&_handle->pBuffer[_handle->tailIndex], _buf, _nelements);
@@ -133,16 +134,41 @@ error_t RB_Get(RB_Handle_t* const _handle, const size_t _nelements, uint8_t* con
 {
     error_t retVal = eERROR_NO_ERROR;
 
-    // Input parameter validity check
-    if((_handle == NULL) || (_nelements == 0u) || (_buf == NULL))
-    {
-        return eERROR_INVALID_PARAMETERS;
-    }
-
     if(RB_IsInstanceValid(_handle) == false)
     {
         return eERROR_INSTANCE_INVALID;
     }
+
+    // Input parameter validity check (_handle is checked separately)
+    if( (_nelements == 0u) || (_buf == NULL) ||
+        (_nelements > _handle->elementCount))   // Also check if the user wants more elements that are currently in the buffer
+    {
+        return eERROR_INVALID_PARAMETERS;
+    }
+
+    // Again two options.
+    // 1. The head index + number of elements to retrieve is less than the buffer size
+    // 2. The head index + number of elements to retrieve is greater than the buffer size, then we need to wrap around and copy the data in two parts
+    if(_handle->headIndex + _nelements < _handle->bufferSize)
+    {
+        // Copy data directly
+        memcpy(_buf, &_handle->pBuffer[_handle->headIndex], _nelements);
+        _handle->headIndex += _nelements;
+    }
+    else
+    {
+        // Copy data in two parts
+        const size_t firstPartSize = _handle->bufferSize - _handle->headIndex;
+
+        memcpy(_buf, &_handle->pBuffer[_handle->headIndex], firstPartSize);
+        memcpy(&_buf[firstPartSize], &_handle->pBuffer[0], _nelements - firstPartSize);
+
+        // Advance the head index
+        _handle->headIndex = (_nelements - firstPartSize);
+    }
+
+    // Update the element count
+    _handle->elementCount -= _nelements;
 
     // No issues detected, continue with RB logic
     return retVal;
