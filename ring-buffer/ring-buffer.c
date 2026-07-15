@@ -1,5 +1,4 @@
 #include "ring-buffer.h"
-#include <stdbool.h>
 
 ////////////////////////////////////////////////////////////////////////////////
 // Function Prototypes
@@ -60,6 +59,7 @@ error_t RB_Init(RB_Handle_t* const _handle, size_t _size, uint8_t* const _storag
 * @retval   eERROR_NO_ERROR               Data was successfully added to the ring buffer.
 * @retval   eERROR_INVALID_PARAMETERS     Input parameters are invalid (null pointers, zero size).
 * @retval   eERROR_INSTANCE_INVALID       Ring buffer instance is invalid
+* @retval   eERROR_BUFFER_FULL            Ring buffer is full and overwrite is not allowed
 *///////////////////////////////////////////////////////////////////////////////
 error_t RB_Put(RB_Handle_t* const _handle, const size_t _nelements, const uint8_t* const _buf)
 {
@@ -76,7 +76,40 @@ error_t RB_Put(RB_Handle_t* const _handle, const size_t _nelements, const uint8_
         return eERROR_INSTANCE_INVALID;
     }
 
-    // No issues detected, continue with RB logic
+    // Then check if the buffer is full and if overwrite is allowed
+    if( (_handle->elementCount + _nelements > _handle->bufferSize) && 
+        (_handle->overwriteOldValues == false))
+    {
+        return eERROR_BUFFER_FULL;
+    }
+
+    // No issues detected, continue with RB logic. For put we advance tail index
+    // We need to check for possible overflow of array size. Two options here:
+    // 1. The tail index + number of elements to add is less than the buffer size, then we can just copy the data
+    // 2. The tail index + number of elements to add is greater than the buffer size, then we need to wrap around and copy the data in two parts
+    if(_handle->tailIndex + _nelements <= _handle->bufferSize)
+    {
+        // Copy data directly
+        memcpy(&_handle->pBuffer[_handle->tailIndex], _buf, _nelements);
+        _handle->tailIndex += _nelements;
+    }
+    else
+    {
+        // Copy data in two parts
+        // First we calculate the number of elements that can be copied before the end of the buffer
+        const size_t firstPartSize = _handle->bufferSize - _handle->tailIndex;
+
+        // Then we do two memcopies.
+        memcpy(&_handle->pBuffer[_handle->tailIndex], _buf, firstPartSize);
+        memcpy(&_handle->pBuffer[0], &_buf[firstPartSize], _nelements - firstPartSize);
+
+        // Advance the tail index
+        _handle->tailIndex = (_nelements - firstPartSize);
+    }
+
+    // Update the element count
+    _handle->elementCount += _nelements;
+
     return retVal;
 }
 

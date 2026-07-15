@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h> // Include mandatory because it contains size_t type
+#include <stdbool.h>
 
 ////////////////////////////////////////////////////////////////////////////////
 // Definitions
@@ -24,10 +25,12 @@ typedef enum
 */
 typedef struct
 {
-    size_t  headIndex;      // Head index
-    size_t  tailIndex;      // Tail index
-    uint8_t *pBuffer;       // Pointer to the start of the allocated ring buffer memory
-    size_t  bufferSize;     // Size of the allocated memory
+    size_t  headIndex;          // Head index - element that will be read next
+    size_t  tailIndex;          // Tail index - element that will be written next
+    uint8_t *pBuffer;           // Pointer to the start of the allocated ring buffer memory
+    size_t  bufferSize;         // Size of the allocated memory
+    bool   overwriteOldValues;  // Flag to indicate if new data should overwrite old data when buffer is full
+    size_t elementCount;        // Number of elements currently in the buffer
 }RB_Handle_t;
 
 ////////////////////////////////////////////////////////////////////////////////
