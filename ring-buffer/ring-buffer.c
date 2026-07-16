@@ -64,9 +64,9 @@ error_t RB_Init(RB_Handle_t* const _handle, size_t _size, uint8_t* const _storag
 *           It verifies input parameters for validity (no null pointers, non-zero size)
 *           and if the parameters are valid it updates the ring buffer instance accordingly.
 *
-* @param[in] _handle    Pointer to the pre-allocated ring buffer instance
-* @param[in] _nelements Number of elements to add
-* @param[in] _buf       Pointer to the data to add
+* @param[in,out]    _handle    Pointer to the pre-allocated ring buffer instance
+* @param[in]        _nelements Number of elements to add
+* @param[in]        _buf       Pointer to the data to add
 *
 * @retval   eERROR_NO_ERROR               Data was successfully added to the ring buffer.
 * @retval   eERROR_INVALID_PARAMETERS     Input parameters are invalid (null pointers, zero size).
@@ -75,8 +75,6 @@ error_t RB_Init(RB_Handle_t* const _handle, size_t _size, uint8_t* const _storag
 *///////////////////////////////////////////////////////////////////////////////
 error_t RB_Put(RB_Handle_t* const _handle, const size_t _nelements, const uint8_t* const _buf)
 {
-    error_t retVal = eERROR_NO_ERROR;
-
     if(RB_IsInstanceValid(_handle) == false)
     {
         return eERROR_INSTANCE_INVALID;
@@ -88,41 +86,70 @@ error_t RB_Put(RB_Handle_t* const _handle, const size_t _nelements, const uint8_
         return eERROR_INVALID_PARAMETERS;
     }
 
-    // Then check if the buffer is full and if overwrite is allowed
-    if( (_handle->elementCount + _nelements > _handle->bufferSize) && 
-        (_handle->overwriteOldValues == false))
+    // Variables below are only necessary if the overwrite is allowed
+    // and the user tries to write more data than the buffer can hold.
+    // In this case we need to copy only the last part of the data and discard the rest.
+    // To do that we need to modify the source pointer and the number of elements to copy.
+
+    const uint8_t *pSourceBuffer = _buf; // Mutable pointer to immutable data
+    size_t  numOfElementsToCopy = _nelements;
+
+#if (RB_CONF_ALLOW_OVERWRITE == 0u)
+    // Check if the data overwrites the old data.
+    // Since we are observing the element count, we can check if
+    // the number of elements to add + current element count is larger than the buffer size.
+    // No need to compare indexes.
+    if( ((_handle->elementCount + numOfElementsToCopy) > _handle->bufferSize))
     {
         return eERROR_BUFFER_FULL;
     }
+#else
+    if(numOfElementsToCopy >= _handle->bufferSize)
+    {
+        // In this case we need to copy only the last part of the buffer.
+        // We might still need to do a split copy, so we only have to modify 
+        // the source pointer to point to the last part of the data.
+        pSourceBuffer += numOfElementsToCopy - _handle->bufferSize;  // Advance using original count
+        numOfElementsToCopy = _handle->bufferSize;                   // Cap the copy element count to the buffer size       
+    }
+#endif
 
-    // No issues detected, continue with RB logic. For put we advance tail index
-    // We need to check for possible overflow of array size. Two options here:
-    // 1. The tail index + number of elements to add is less than the buffer size, then we can just copy the data
-    // 2. The tail index + number of elements to add is greater than the buffer size, then we need to wrap around and copy the data in two parts
-    if(_handle->tailIndex + _nelements < _handle->bufferSize)
+    // For Put we advance tail index. There are three cases:
+    // 1. If the tail index + number of elements to add is < the buffer size. In this case direct memcpy is possible
+    // 2. If the tail index + number of elements to add is >= the buffer size, then we need to wrap around and copy the data in two parts
+    // 3. If the number of elements to add is larger than the buffer size, then we need to copy only the last part of the data (the part that fits in the buffer) and discard the rest. This is only applicable if overwrite is allowed.
+    if(_handle->tailIndex + numOfElementsToCopy < _handle->bufferSize)
     {
         // Copy data directly
-        memcpy(&_handle->pBuffer[_handle->tailIndex], _buf, _nelements);
-        _handle->tailIndex += _nelements;
+        memcpy(&_handle->pBuffer[_handle->tailIndex], pSourceBuffer, numOfElementsToCopy);
+        _handle->tailIndex += numOfElementsToCopy;
     }
     else
     {
         // Copy data in two parts
-        // First we calculate the number of elements that can be copied before the end of the buffer
         const size_t firstPartSize = _handle->bufferSize - _handle->tailIndex;
 
-        // Then we do two memcopies.
-        memcpy(&_handle->pBuffer[_handle->tailIndex], _buf, firstPartSize);
-        memcpy(&_handle->pBuffer[0], &_buf[firstPartSize], _nelements - firstPartSize);
+        // Do a split copy
+        memcpy(&_handle->pBuffer[_handle->tailIndex], pSourceBuffer, firstPartSize);
+        memcpy(&_handle->pBuffer[0], &pSourceBuffer[firstPartSize], numOfElementsToCopy - firstPartSize);
 
         // Advance the tail index
-        _handle->tailIndex = (_nelements - firstPartSize);
+        _handle->tailIndex = (numOfElementsToCopy - firstPartSize);
     }
 
-    // Update the element count
-    _handle->elementCount += _nelements;
+    // If the write has overrun the head, advance head to stay just ahead of tail
+    if(_handle->elementCount + numOfElementsToCopy > _handle->bufferSize)
+    {
+        // Buffer is now full; head must follow tail
+        _handle->headIndex = _handle->tailIndex;
+        _handle->elementCount = _handle->bufferSize;
+    }
+    else
+    {
+        _handle->elementCount += numOfElementsToCopy;
+    }
 
-    return retVal;
+    return eERROR_NO_ERROR;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

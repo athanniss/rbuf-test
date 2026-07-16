@@ -1,3 +1,11 @@
+////////////////////////////////////////////////////////////////////////////////
+/**
+* @file ring-buffer.h
+* @brief Header file for a byte-size (uint8_t) ring buffer
+* @author ben
+* @date 16.06.2024
+*
+*///////////////////////////////////////////////////////////////////////////////
 #ifndef RING_BUFFER_H
 #define RING_BUFFER_H
 
@@ -16,18 +24,24 @@
 *     pass back the value through a pointer parameter.
 *
 *   - RB_Init / RB_Put: The behaviour of the ring buffer when written
-*     with more data than it can hold is not defined. Right now the code returns
-*     an error and no write is performed. 
-*     Suggestion: Add a configuration flag to ring buffer init to define the behaviour
-*     whether an overwrite of the old data is allowed or not. If it's not allowed, then
-*     the current behaviour is fine. If it is, the RB_Put needs to check this flag
-*     and do possible multiple memcpy's to overwrite the old data (e.g. memcpy needs
-*     to be done in a loop until all new data is written).
+*     with more data than it can hold is not defined. Right now this can be
+*     set with a config define, but this means the behaviour will be the same
+*     for all ring buffer instances. 
+*     Suggestion: Add a parameter to RB_Init to set the behaviour during runtime (init).
+*
+*   - Element size is currently fixed to uint8_t (byte). With a slight rework
+*     the ring buffer could be made generic to support any data type. This would require
+*     using void pointer instead of indexes and adjusting the
+*     memcpy operations accordingly.
+*     IMPORTANT: In this case _nbelements != sizeof(buffer)! Then we need
+*     to define whether _nelements is the number of elements or the number of bytes to write/read. This would need to be defined in the API.
 */
 
 ////////////////////////////////////////////////////////////////////////////////
 // Definitions
 ////////////////////////////////////////////////////////////////////////////////
+
+#define RB_CONF_ALLOW_OVERWRITE (0u) // Set to 1 to allow overwriting old data when buffer is full, 0 to disallow
 
 /*
 * Error enum for ring buffer.
