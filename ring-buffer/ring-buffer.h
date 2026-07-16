@@ -3,7 +3,7 @@
 * @file ring-buffer.h
 * @brief Header file for a byte-size (uint8_t) ring buffer
 * @author ben
-* @date 16.06.2024
+* @date 16.07.2026
 *
 *///////////////////////////////////////////////////////////////////////////////
 #ifndef RING_BUFFER_H
@@ -34,14 +34,18 @@
 *     using void pointer instead of indexes and adjusting the
 *     memcpy operations accordingly.
 *     IMPORTANT: In this case _nbelements != sizeof(buffer)! Then we need
-*     to define whether _nelements is the number of elements or the number of bytes to write/read. This would need to be defined in the API.
+*     to define whether _nelements is the number of elements or the number of bytes to write/read.
+*     This would need to be defined in the API.
+*     Also a check should be added to RB_Init to ensure that the buffer size is a multiple of the element size.
 */
 
 ////////////////////////////////////////////////////////////////////////////////
 // Definitions
 ////////////////////////////////////////////////////////////////////////////////
 
-#define RB_CONF_ALLOW_OVERWRITE (0u) // Set to 1 to allow overwriting old data when buffer is full, 0 to disallow
+#ifndef RB_CONF_ALLOW_OVERWRITE
+    #define RB_CONF_ALLOW_OVERWRITE (0u) // Set to 1 to allow overwriting old data when buffer is full, 0 to disallow
+#endif
 
 /*
 * Error enum for ring buffer.

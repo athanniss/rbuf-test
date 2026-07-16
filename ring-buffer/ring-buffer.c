@@ -3,7 +3,7 @@
 * @file ring-buffer.c
 * @brief Implements a byte-size (uint8_t) ring buffer
 * @author ben
-* @date 16.06.2024
+* @date 16.07.2026
 *
 *///////////////////////////////////////////////////////////////////////////////
 
