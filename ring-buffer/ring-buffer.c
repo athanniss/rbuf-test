@@ -1,3 +1,12 @@
+////////////////////////////////////////////////////////////////////////////////
+/**
+* @file ring-buffer.c
+* @brief Implements a byte-size (uint8_t) ring buffer
+* @author ben
+* @date 16.06.2024
+*
+*///////////////////////////////////////////////////////////////////////////////
+
 #include "ring-buffer.h"
 #include <string.h> // For memcpy
 
@@ -8,41 +17,43 @@
 static bool RB_IsInstanceValid(RB_Handle_t* const _handle);
 
 ////////////////////////////////////////////////////////////////////////////////
+// Function Definitions
+////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
 /**
 * @brief    Initialize ring buffer instance
 *
 * @note     This function initializes ring buffer instance.
 *           It verifies input parameters for validity (no null pointers, non-zero size)
-*           and if the parameters are valid it populates the ring buffer pointers to
+*           and if the parameters are valid it populates the ring buffer instance to
 *           initial state.
 *
-* @param[in] _handle    Pointer to the pre-allocated ring buffer instance
-* @param[in] _size      Size of the available underlying memory
-* @param[in] _storage   Pointer to the underlying memory
+* @param[in,out] _handle    Pointer to the pre-allocated ring buffer instance
+* @param[in] _size          Size of the available underlying memory
+* @param[in] _storage       Pointer to the underlying memory
 *
 * @retval eERROR_NO_ERROR               Ring Buffer instance was successfully initialized.
 * @retval eERROR_INVALID_PARAMETERS     Input parameters are invalid (null pointers, zero size)
 *///////////////////////////////////////////////////////////////////////////////
 error_t RB_Init(RB_Handle_t* const _handle, size_t _size, uint8_t* const _storage)
 {
-    error_t retVal = eERROR_NO_ERROR;
-
     // Input parameter validity check
     if((_handle == NULL) || (_size == 0u) || (_storage == NULL))
     {
-        retVal = eERROR_INVALID_PARAMETERS;
+        return eERROR_INVALID_PARAMETERS;
     }
     else
     {
-        // Initialize instance directly
         _handle->bufferSize = _size;
         _handle->pBuffer    = _storage;
 
         _handle->headIndex = 0;
         _handle->tailIndex = 0;
+        _handle->elementCount = 0;
     }
 
-    return retVal;
+    return eERROR_NO_ERROR;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -120,7 +131,11 @@ error_t RB_Put(RB_Handle_t* const _handle, const size_t _nelements, const uint8_
 *
 * @note     This function retrieves data from the ring buffer.
 *           It verifies input parameters for validity (no null pointers, non-zero size)
-*           and if the parameters are valid it updates the ring buffer instance accordingly.
+*           and if the parameters are valid it copies the data to user provided buffer and
+*           updates the ring buffer instance accordingly.
+*           Important: The function will return an error if the user tries to read
+*           more elements than are currently in the buffer. Continuous read is not
+*           allowed. The user should check the number of elements in the buffer before reading.
 *
 * @param[in] _handle    Pointer to the pre-allocated ring buffer instance
 * @param[in] _nelements Number of elements to retrieve
@@ -129,26 +144,29 @@ error_t RB_Put(RB_Handle_t* const _handle, const size_t _nelements, const uint8_
 * @retval   eERROR_NO_ERROR               Data was successfully retrieved from the ring buffer.
 * @retval   eERROR_INVALID_PARAMETERS     Input parameters are invalid (null pointers, zero size).
 * @retval   eERROR_INSTANCE_INVALID       Ring buffer instance is invalid
+* @retval   eERROR_READ_COUNT_TOO_LARGE   User requested to read more elements than are currently in the buffer
 *///////////////////////////////////////////////////////////////////////////////
 error_t RB_Get(RB_Handle_t* const _handle, const size_t _nelements, uint8_t* const _buf)
 {
-    error_t retVal = eERROR_NO_ERROR;
-
     if(RB_IsInstanceValid(_handle) == false)
     {
         return eERROR_INSTANCE_INVALID;
     }
 
     // Input parameter validity check (_handle is checked separately)
-    if( (_nelements == 0u) || (_buf == NULL) ||
-        (_nelements > _handle->elementCount))   // Also check if the user wants more elements that are currently in the buffer
+    if( (_nelements == 0u) || (_buf == NULL))
     {
         return eERROR_INVALID_PARAMETERS;
     }
 
-    // Again two options.
-    // 1. The head index + number of elements to retrieve is less than the buffer size
-    // 2. The head index + number of elements to retrieve is greater than the buffer size, then we need to wrap around and copy the data in two parts
+    if(_nelements > _handle->elementCount)
+    {
+        return eERROR_READ_COUNT_TOO_LARGE;
+    }
+
+    // Two options.
+    // 1. The head index + number of elements to retrieve is < the buffer size. In this case direct memcpy is possible
+    // 2. The head index + number of elements to retrieve is >= the buffer size, then we need to wrap around and copy the data in two parts
     if(_handle->headIndex + _nelements < _handle->bufferSize)
     {
         // Copy data directly
@@ -163,15 +181,13 @@ error_t RB_Get(RB_Handle_t* const _handle, const size_t _nelements, uint8_t* con
         memcpy(_buf, &_handle->pBuffer[_handle->headIndex], firstPartSize);
         memcpy(&_buf[firstPartSize], &_handle->pBuffer[0], _nelements - firstPartSize);
 
-        // Advance the head index
         _handle->headIndex = (_nelements - firstPartSize);
     }
 
     // Update the element count
     _handle->elementCount -= _nelements;
 
-    // No issues detected, continue with RB logic
-    return retVal;
+    return eERROR_NO_ERROR;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -189,16 +205,14 @@ error_t RB_Get(RB_Handle_t* const _handle, const size_t _nelements, uint8_t* con
 *///////////////////////////////////////////////////////////////////////////////
 static bool RB_IsInstanceValid(RB_Handle_t* const _handle)
 {
-    bool retVal = true;
-
-    if( (_handle == NULL) ||                            // The buffer is not initalized (need to check this first)
-        (_handle->bufferSize == 0)  ||                  // If buffer size is 0 it's most likely uninitialized or corrupted
+    if( (_handle == NULL) ||                            // The buffer is not initialized (need to check this first, if handle is NULL then the rest of the checks will cause a crash)
+        (_handle->bufferSize == 0)  ||                  // Indicates that instance is uninitialized or corrupted
         (_handle->headIndex >= _handle->bufferSize) ||  // If either of the indexes is larger than the size, it's corrupted
         (_handle->tailIndex >= _handle->bufferSize) ||
-        (_handle->pBuffer == NULL))                     // If pointer to buffer is null, it's uninitialized)
+        (_handle->pBuffer == NULL))                     // If pointer to buffer is null, it's uninitialized
     {
-        retVal = false;
+        return false;
     }
 
-    return retVal;
+    return true;
 }
